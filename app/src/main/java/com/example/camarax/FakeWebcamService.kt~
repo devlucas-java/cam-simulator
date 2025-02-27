@@ -1,0 +1,165 @@
+package com.example.camarax
+
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.graphics.PixelFormat
+import android.media.MediaPlayer
+import android.net.Uri
+import android.os.Build
+import android.os.IBinder
+import android.view.Gravity
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+
+class FakeWebcamService : Service(), MediaPlayer.OnPreparedListener, MediaPlayer.OnCompletionListener {
+    private lateinit var windowManager: WindowManager
+    private lateinit var surfaceView: SurfaceView
+    private var mediaPlayer: MediaPlayer? = null
+    private var videoUri: Uri? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        val notification = createNotification()
+        startForeground(NOTIFICATION_ID, notification)
+
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        surfaceView = SurfaceView(this)
+        setupSurfaceHolder()
+    }
+
+    private fun setupSurfaceHolder() {
+        val holder = surfaceView.holder
+        holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                videoUri?.let { uri ->
+                    initMediaPlayer(uri, holder)
+                }
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                // Não é necessário implementar
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                releaseMediaPlayer()
+            }
+        })
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_VIDEO_URI)?.let { uriString ->
+            videoUri = Uri.parse(uriString)
+            addOverlay()
+        }
+
+        return START_STICKY
+    }
+
+    private fun addOverlay() {
+        // Configura os parâmetros da janela overlay
+        val params = WindowManager.LayoutParams(
+            1, // Largura mínima (invisível para o usuário)
+            1, // Altura mínima (invisível para o usuário)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        )
+
+        params.gravity = Gravity.TOP or Gravity.START
+
+        try {
+            windowManager.addView(surfaceView, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun initMediaPlayer(uri: Uri, holder: SurfaceHolder) {
+        try {
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(applicationContext, uri)
+                setDisplay(holder)
+                setOnPreparedListener(this@FakeWebcamService)
+                setOnCompletionListener(this@FakeWebcamService)
+                isLooping = true
+                prepareAsync()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onPrepared(mp: MediaPlayer) {
+        mp.start()
+    }
+
+    override fun onCompletion(mp: MediaPlayer) {
+        // Como isLooping = true, isso só será chamado se houver um erro
+        mp.start()
+    }
+
+    private fun releaseMediaPlayer() {
+        mediaPlayer?.apply {
+            stop()
+            release()
+        }
+        mediaPlayer = null
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Fake Webcam Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Serviço de simulação de webcam em execução"
+            }
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Fake Webcam")
+            .setContentText("Simulação de webcam em execução")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            windowManager.removeView(surfaceView)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        releaseMediaPlayer()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+
+    companion object {
+        const val EXTRA_VIDEO_URI = "extra_video_uri"
+        private const val CHANNEL_ID = "fake_webcam_channel"
+        private const val NOTIFICATION_ID = 1001
+    }
+}

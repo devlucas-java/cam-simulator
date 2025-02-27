@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">CamaraX</string>
+    <string name="selecionar_v_deo">Selecionar Vídeo</string>
+    <string name="iniciar_webcam_fake">Iniciar Webcam Fake</string>
+    <string name="parar_webcam_fake">Parar Webcam Fake</string>
+    <string name="nenhum_v_deo_selecionado">Nenhum vídeo selecionado</string>
 </resources>
